@@ -33,7 +33,9 @@ flowchart LR
 5. Google Cloud 側は `gcloud auth login` → `gcloud config set project <プロジェクトID>` → `gcloud services enable texttospeech.googleapis.com`。`google_tts_synth.sh` の `PROJECT` を自分のプロジェクトIDに書き換える
 6. 動作確認：`google_tts_say.sh leda "聞こえていますか"`
 
-詳しい手順・設計の理由・ハマりどころは解説記事（Qiita・公開後にリンクを追記）に書いてある。
+詳しい手順・設計の理由・ハマりどころは解説記事に書いてある。
+
+- Qiita: [ソファーで本を読みながらClaude Codeを使う——指示は口で、返事は耳で](https://qiita.com/tri-ponte/items/8917882a5a5b7b98506a)
 
 ## 注意
 
