@@ -1,24 +1,80 @@
 #!/bin/zsh
-# Google Cloud Text-to-Speech で読み上げる。
+# Google Cloud Text-to-Speech で読み上げる
 # 使い方: google_tts_say.sh <話者> <テキスト>
-#   話者: leda（女声・既定） / charon（男声） / aoede（女声2） / kore（女声3）
-#         または ja-JP-… のフルネーム
-# 失敗したら Mac 内蔵の say -v Kyoko に自動で切り替える。
-#
-# 話者が交代する会話を続けて読むときは、このスクリプトを何回も呼ばず
-# google_tts_queue.sh を使う（次の声の合成を、今の声の再生中に裏で終わらせられる）。
+# 合成に失敗した塊だけ、Mac 内蔵の say -v Kyoko で読む
 
 SCRIPT_DIR="${0:A:h}"
+SYNTH="$SCRIPT_DIR/google_tts_synth.sh"
+
+# 前の読み上げが鳴っていたら止める（あとから来たほうを読む）
+STATE="${TMPDIR:-/tmp}/gtts_current.pid"
+if [[ -f "$STATE" ]]; then
+  OLD=$(cat "$STATE" 2>/dev/null)
+  if [[ -n "$OLD" && "$OLD" != "$$" ]] && kill -0 "$OLD" 2>/dev/null; then
+    pkill -P "$OLD" 2>/dev/null   # 子（afplay・say・合成）を先に止める
+    kill "$OLD" 2>/dev/null
+  fi
+fi
+pkill -x afplay 2>/dev/null       # 親がいなくなって鳴り続けている分も止める
+echo $$ > "$STATE"
+# 控えを消すのは、中身が自分の PID のときだけ（あとから来たものの控えを消さない）
+trap '[[ "$(cat "$STATE" 2>/dev/null)" == "$$" ]] && rm -f "$STATE" 2>/dev/null' EXIT
+
 VOICE_KEY="${1:-leda}"
 shift
 TEXT="$*"
 [[ -z "$TEXT" ]] && { echo "ERROR: テキストが空" >&2; exit 1 }
 
-MP3=$("$SCRIPT_DIR/google_tts_synth.sh" "$VOICE_KEY" "$TEXT")
-if [[ -z "$MP3" || ! -s "$MP3" ]]; then
-  echo "WARN: Google TTS 失敗。Kyoko で読み上げます" >&2
-  exec say -v Kyoko "$TEXT"
-fi
+# 塊に割る：先頭の塊は、文の切れ目で25文字を超えたら閉じる（最初の声を早く出すため）
+# 2つ目からは400文字ずつ。最後の塊が20文字未満なら、1つ前にくっつける
+CHUNK_STR=$(TEXT="$TEXT" python3 - <<'PYEOF'
+import os, re
+t = os.environ["TEXT"].replace("\n", " ")
+sents = [s for s in re.findall(r"[^。！？]*[。！？]?", t) if s.strip()]
+chunks, buf = [], ""
+cur_limit = 25
+for s in sents:
+    buf += s
+    if len(buf) >= cur_limit:
+        chunks.append(buf)
+        buf = ""
+        cur_limit = 400
+if buf:
+    chunks.append(buf)
+if len(chunks) >= 2 and len(chunks[-1]) < 20:
+    chunks[-2] += chunks[-1]
+    chunks.pop()
+print("\x1f".join(chunks))
+PYEOF
+)
+typeset -a CHUNKS
+CHUNKS=("${(@ps.\x1f.)CHUNK_STR}")
 
-afplay "$MP3"
-rm -f "$MP3"
+play_or_say() {  # $1=mp3のパス $2=元の文
+  if [[ -n "$1" && -s "$1" ]]; then
+    afplay "$1"
+    rm -f "$1"
+  else
+    echo "WARN: Google TTS 失敗。Kyoko で読み上げます" >&2
+    say -v Kyoko "$2"
+  fi
+}
+
+N=${#CHUNKS}
+MP3=$("$SYNTH" "$VOICE_KEY" "${CHUNKS[1]}")
+i=1
+while (( i <= N )); do
+  # いまの塊を鳴らしている間に、次の塊を裏で合成する
+  if (( i < N )); then
+    NEXT_OUT=$(mktemp -t gtts_next)
+    ( "$SYNTH" "$VOICE_KEY" "${CHUNKS[i+1]}" > "$NEXT_OUT" 2>/dev/null ) &
+    NEXT_PID=$!
+  fi
+  play_or_say "$MP3" "${CHUNKS[i]}"
+  if (( i < N )); then
+    wait $NEXT_PID
+    MP3=$(cat "$NEXT_OUT" 2>/dev/null)
+    rm -f "$NEXT_OUT"
+  fi
+  (( i++ ))
+done

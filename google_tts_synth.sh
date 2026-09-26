@@ -31,9 +31,31 @@ else
 fi
 
 TEXT="$TEXT" VOICE="$VOICE" TTS_TOKEN="$TOKEN" TTS_PROJECT="$PROJECT" python3 - <<'PYEOF' > "$MP3"
-import json, base64, os, sys, urllib.request
+import json, base64, os, re, sys, urllib.request
+
+# Chirp 3: HD は1文が長すぎると HTTP 400（sentences that are too long）を返す。
+# 長い文は読点を句点に置き換えて割り、文と文は改行で区切って送る
+def split_long_sentences(text, limit=200):
+    out = []
+    for sent in re.findall(r"[^。！？\n]*[。！？\n]?", text):
+        if not sent:
+            continue
+        if len(sent.encode()) <= limit:
+            out.append(sent)
+            continue
+        buf = ""
+        for part in re.findall(r"[^、]*、?", sent):
+            if buf and len((buf + part).encode()) > limit:
+                out.append(buf.rstrip("、") + "。")
+                buf = part
+            else:
+                buf += part
+        if buf:
+            out.append(buf)
+    return "\n".join(s.strip() for s in out if s.strip())
+
 body = json.dumps({
-    "input": {"text": os.environ["TEXT"]},
+    "input": {"text": split_long_sentences(os.environ["TEXT"])},
     "voice": {"languageCode": "ja-JP", "name": os.environ["VOICE"]},
     "audioConfig": {"audioEncoding": "MP3"},
 }).encode()
