@@ -1,12 +1,12 @@
 #!/bin/zsh
 # Google Cloud Text-to-Speech で読み上げる
 # 使い方: google_tts_say.sh <話者> <テキスト>
-# 合成に失敗した塊だけ、Mac 内蔵の say -v Kyoko で読む
+# 合成に失敗した分だけ、Mac 内蔵の say -v Kyoko で読む
 
 SCRIPT_DIR="${0:A:h}"
 SYNTH="$SCRIPT_DIR/google_tts_synth.sh"
 
-# 前の読み上げが鳴っていたら止める（あとから来たほうを読む）
+# 前の読み上げが再生中なら止める（あとから来たほうを読む）
 STATE="${TMPDIR:-/tmp}/gtts_current.pid"
 if [[ -f "$STATE" ]]; then
   OLD=$(cat "$STATE" 2>/dev/null)
@@ -15,7 +15,7 @@ if [[ -f "$STATE" ]]; then
     kill "$OLD" 2>/dev/null
   fi
 fi
-pkill -x afplay 2>/dev/null       # 親がいなくなって鳴り続けている分も止める
+pkill -x afplay 2>/dev/null       # 親がいなくなって再生が続いている分も止める
 echo $$ > "$STATE"
 # 控えを消すのは、中身が自分の PID のときだけ（あとから来たものの控えを消さない）
 trap '[[ "$(cat "$STATE" 2>/dev/null)" == "$$" ]] && rm -f "$STATE" 2>/dev/null' EXIT
@@ -25,8 +25,8 @@ shift
 TEXT="$*"
 [[ -z "$TEXT" ]] && { echo "ERROR: テキストが空" >&2; exit 1 }
 
-# 塊に割る：先頭の塊は、文の切れ目で25文字を超えたら閉じる（最初の声を早く出すため）
-# 2つ目からは400文字ずつ。最後の塊が20文字未満なら、1つ前にくっつける
+# 文を分ける：1つ目は、文の切れ目で25文字を超えたら閉じる（最初の声を早く出すため）
+# 2つ目からは400文字ずつ。最後の1つが20文字未満なら、1つ前にくっつける
 CHUNK_STR=$(TEXT="$TEXT" python3 - <<'PYEOF'
 import os, re
 t = os.environ["TEXT"].replace("\n", " ")
@@ -64,7 +64,7 @@ N=${#CHUNKS}
 MP3=$("$SYNTH" "$VOICE_KEY" "${CHUNKS[1]}")
 i=1
 while (( i <= N )); do
-  # いまの塊を鳴らしている間に、次の塊を裏で合成する
+  # いまの1つを再生している間に、次の1つを裏で合成する
   if (( i < N )); then
     NEXT_OUT=$(mktemp -t gtts_next)
     ( "$SYNTH" "$VOICE_KEY" "${CHUNKS[i+1]}" > "$NEXT_OUT" 2>/dev/null ) &

@@ -1,9 +1,9 @@
 #!/bin/zsh
 # 読み上げを止める
 # 使い方: tts_stop.sh
-#   いま鳴っている google_tts_say.sh と afplay を止める。
-#   次の塊を裏で合成している google_tts_synth.sh も一緒に止めるので、
-#   止めた直後に続きが鳴り出すことはない。
+#   いま再生している google_tts_say.sh と afplay を止める。
+#   次に読む分を裏で合成している google_tts_synth.sh も一緒に止めるので、
+#   止めた直後に続きの声が出ることはない。
 #
 # キーボード1つで止めたいときは、ショートカット.app に
 # 「シェルスクリプトを実行」で $HOME/Library/Scripts/tts_stop.sh を登録し、
